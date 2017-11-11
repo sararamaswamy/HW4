@@ -31,13 +31,15 @@ db = SQLAlchemy(app) # For database use
 ## Set up Shell context so it's easy to use the shell to debug
 def make_shell_context():
     return dict(app=app, db=db, Tweet=Tweet, User=User, Hashtag=Hashtag)
+    ##do I need a collections variable, too?
      ## TODO SI364: Add your models to this shell context function so you can use them in the shell
     # TODO SI364: Submit a screenshot of yourself using the shell to make a query for all the Tweets in the database.
     # Filling this in will make that easier!
 
 # Add function use to manager
-manager.add_command("shell", Shell(make_context=make_shell_context))
 
+manager.add_command("shell", Shell(make_context=make_shell_context))
+##flask shel imports databases, can write queries
 
 #########
 ######### Everything above this line is important/useful setup, not problem-solving.
@@ -62,10 +64,13 @@ class Tweet(db.Model):
     __tablename__ = "tweets"
     id = db.Column(db.Integer, primary_key=True)
     tweet_text = db.Column(db.String(285))
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    hashtags = db.relationship("Hashtag", secondary = collections, backref=db.backref('albums',lazy='dynamic'),lazy='dynamic')
-    hashtag_id = db.Column(db.Integer, db.ForeignKey("hashtags.id"))
-
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    hashtags = db.relationship("Hashtag", secondary = collections, backref=db.backref('tweets',lazy='dynamic'),lazy='dynamic')
+    def __repr__(self):
+        return "tweet text: {}, user: {}, hashtags: {})".format(self.tweet_text,self.user_id, self.hashtags)
+    ## tweet has all hashtags in its class
+    # hashtag_id = db.Column(db.Integer, db.ForeignKey("hashtags.id"))
+    ## repr method here to see it in shell 
 # - User
 ## -- id (Primary Key)
 ## -- twitter_username (String, up to 64 chars) (Unique=True)
@@ -73,8 +78,10 @@ class User(db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key = True)
     twitter_username = db.Column(db.String(64), unique=True)
-    tweets = db.relationship("Tweet", backref = "user")
-
+    tweets = db.relationship("Tweet", backref = "User")
+    def __repr__(self):
+        return "username: {}, tweets: {},".format(self.twitter_username,self.tweets)
+    #to see it in shell 
 
 # - Hashtag
 ## -- id (Primary Key)
@@ -84,6 +91,10 @@ class Hashtag(db.Model):
     id = db.Column(db.Integer, primary_key = True)
     hashtag_text = db.Column(db.String(285), unique=True)
     tweet_id = db.Column(db.Integer, db.ForeignKey("tweets.id"))
+    def __repr__(self):
+        return "hashtag_text: {}, tweet_id: {},".format(self.hashtag_text,self.tweet_id)
+
+
 
 
 
@@ -104,8 +115,8 @@ class Hashtag(db.Model):
 ## -- a list of comma-separated hashtags it should have
 
 class TweetForm(FlaskForm):
-    tweet_text = StringField("What is the tweet text you would like to enter?", validators = [Required()])
-    twitter_username = StringField("Which twitter user should post it?", validators = [Required()])
+    text = StringField("What is the tweet text you would like to enter?", validators = [Required()])
+    username = StringField("Which twitter user should post it?", validators = [Required()])
     hashtags = StringField("What are the hashtags the tweet should have?", validators  = [Required()])
     submit = SubmitField('Submit')
     pass
@@ -116,25 +127,36 @@ class TweetForm(FlaskForm):
 ### For database additions / get_or_create functions
 
 ## TODO SI364: Write get_or_create functions for each model -- Tweets, Hashtags, and Users.
-def get_or_create_tweet(db_session, tweet_text, id):
+def get_or_create_tweet(db_session, tweet_text, username, hashtags_list=[]):
     tweet = db_session.query(Tweet).filter_by(tweet_text = tweet_text).first()
     if tweet:
         return tweet
     else:
         tweet = Tweet(tweet_text=tweet_text)
-        user = get_or_create_user(db_session, id)
-        hashtag = get_or_create_hashtag(db_session.id)
-        tweet.id.append(user)
-        tweet.hashtag.append(hashtag)
+        ##tweet_id happens automatically. primary key happens
+        ## split hashttags_ilist by commas here
+        for hashtag in hashtags_list:
+            print("I'm printing hashtag below this")
+            print(hashtag)
+            hashtag = hashtag.strip()
+            hashtag = get_or_create_hashtag(db_session, hashtag)
+            tweet.hashtags.append(hashtag) ## ask mauli about this part
+
+        user = get_or_create_user(db_session, username)
+        (print(user))
+        (print(type(user)))
+        tweet.user_id = user.id
         db_session.add(tweet)
         db_session.commit()
-    return tweet 
 
+        ## ask mauli about finishing this helper function with list of hashtags
+        return tweet 
 
+## helper function returns blah object.
 def get_or_create_user(db_session, twitter_username):
     user = db_session.query(User).filter_by(twitter_username = twitter_username).first()
-    if twitter_username:
-        return twitter_username
+    if user:
+        return user
     else:
         twitter_username = User(twitter_username=twitter_username)
         db_session.add(twitter_username)
@@ -142,14 +164,17 @@ def get_or_create_user(db_session, twitter_username):
         return twitter_username
 
 def get_or_create_hashtag(db_session, hashtag):
-    hashtag = db_session.query(Hashtag).filter_by(hashtag_text = hashtag).first()
-    if hashtag:
-        return hashtag
+    hashtag_tuple = db_session.query(Hashtag).filter_by(hashtag_text = hashtag).first()
+    if hashtag_tuple:
+        print("returning hashtag that exists")
+        return hashtag_tuple
     else:
-        hashtag =  Hashtag(hashtag_text = hashtag)
-        db_session.add(hashtag)
+        print("creating new hashtag in table")
+        hashtag_tuple =  Hashtag(hashtag_text = hashtag)
+        print(hashtag_tuple.hashtag_text)
+        db_session.add(hashtag_tuple)
         db_session.commit()
-        return hashtag
+        return hashtag_tuple
 
 
 ## -- Tweets should be identified by their text and user id,(e.g. if there's already a tweet with that text, by that user, then return it; otherwise, create it)
@@ -183,8 +208,11 @@ def index():
     if form.validate_on_submit():
         if db.session.query(Tweet).filter_by(tweet_text = form.text.data).first():
             flash("You've already saved a tweet like that!")
-        get_or_create_tweet(db.session, form.text.data, form.username.data)
-        return redirect(url_for('see_all'))
+        x = form.hashtags.data
+        hashtag_list = x.split(",")
+        print(hashtag_list)
+        get_or_create_tweet(db.session, form.text.data, form.username.data, hashtag_list)
+        return redirect(url_for('see_all_tweets'))
     return render_template('index.html', form = form, num_tweets = num_tweets)
     pass
     ## TODO SI364: Fill in the index route as described.
@@ -208,8 +236,12 @@ def see_all_tweets():
     all_tweets = []
     tweets = Tweet.query.all()
     for tweet in tweets:
-        user = Tweet.query.filter_by(id= tweet.user_id).first() 
-        all_tweets.append(tweet.tweet_text, user.name)
+        user = User.query.filter_by(id= tweet.user_id).first()
+        ##unpack it, use the username
+        ## this would have just given user id, not the username, which gives user object
+        tweet_value = tweet.tweet_text
+        tuple_to_show = tweet_value, user.twitter_username
+        all_tweets.append(tuple_to_show)
         ## what is line 154, artist.name referencing? that's what I used here. 
     return render_template('all_tweets.html', all_tweets = all_tweets)
 
@@ -223,8 +255,20 @@ def see_all_tweets():
 def see_all_users():
     all_users = []
     users = User.query.all()
-    names = [(user.name, len(Tweet.query.filter_by(id= user.id).all)) for user in users]
-    return render_template('all_users.html', artist_names=names)
+    for user in users:
+        a = len(Tweet.query.filter_by(user_id = user.id).all())
+        print(a)
+        # print(num_tweet)
+        name = user.twitter_username
+        tuple_to_add = name, a
+        all_users.append(tuple_to_add)
+    # names = [(user.twitter_username, len(Tweet.query.filter_by(id= user.id).all())) for user in users]
+
+    # print(names)
+    return render_template('all_users.html', usernames=all_users)
+
+    ##debug 
+    ##list of tuples
 
     # TODO SI364: Fill in this view function so it can successfully render the template all_users.html, which is provided. (See instructions for more detail.)
     ## HINT: Check out the all_songs and all_artists routes in the songs app you saw in class.
